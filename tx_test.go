@@ -2,6 +2,7 @@ package pgx_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"testing"
@@ -618,4 +619,33 @@ func TestTxSendBatchClosed(t *testing.T) {
 
 	_, err = br.Query()
 	require.Error(t, err)
+}
+
+func TestTxQueryRowNotFound(t *testing.T) {
+	t.Parallel()
+
+	conn := mustConnectString(t, os.Getenv("PGX_TEST_DATABASE"))
+	defer closeConn(t, conn)
+
+	createSql := `
+    create temporary table foo(
+      id integer,
+      unique (id)
+    );
+  `
+
+	ctx := context.Background()
+
+	_, err := conn.Exec(ctx, createSql)
+	require.NoError(t, err)
+
+	err = conn.BeginFunc(ctx, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, "SELECT 1 FROM foo WHERE id = 100500")
+		var value int
+		return row.Scan(&value)
+	})
+	require.Error(t, err)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("expect sql.ErrNoRows, but got %T", err)
+	}
 }
